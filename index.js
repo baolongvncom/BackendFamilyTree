@@ -117,7 +117,7 @@ app.post('/addproduct', fetchAdmin, async (req, res) => {
 );
 
 // Remove Product API
-app.post('/removeproduct', fetchAdmin, async (req, res) => {
+app.post('/removeproduct', async (req, res) => {
     const product = await Product.findOneAndDelete({ id: req.body.id });
     if (product) {
         res.json(
