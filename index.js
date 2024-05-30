@@ -34,7 +34,7 @@ function generateID() {
 }
 
 // Database connection with MongoDB
-MongoDB_URI = "mongodb://localhost:27017/WatchShop";
+MongoDB_URI = "mongodb+srv://baolongvncom:baolong123456@cluster0.0vgsjr7.mongodb.net/WatchShop";
 mongoose.connect(MongoDB_URI);
 
 
