@@ -79,7 +79,7 @@ const fetchAdmin = async (req, res, next) => {
         }
 }
 
-app.post("/upload", fetchAdmin, upload.single("product"), (req, res) => {
+app.post("/upload", upload.single("product"), (req, res) => {
     res.json({
         success: 1,
         image_url: `https://deploynt208backend.onrender.com/images/${req.file.filename}`
@@ -88,7 +88,7 @@ app.post("/upload", fetchAdmin, upload.single("product"), (req, res) => {
 
 // Add Product API
 
-app.post('/addproduct', fetchAdmin, async (req, res) => {
+app.post('/addproduct', async (req, res) => {
     const product = new Product(
         {
             id: generateID(),
@@ -319,7 +319,7 @@ app.get('/allproducts', async (req, res) => {
 );
 
 // Delete Image API
-app.delete("/deleteimage", fetchAdmin, async (req, res) => {
+app.delete("/deleteimage", async (req, res) => {
     const image = req.body.image;
     console.log(image);
     const image_path = path.join("upload", image);
@@ -372,7 +372,7 @@ app.post("/updateproduct", fetchAdmin, upload.single("product"), async (req, res
 
 
 // Creating endpoint for getting all users data
-app.get('/allusers', fetchAdmin, async (req, res) => {
+app.get('/allusers', async (req, res) => {
     // Fetch all users from database except admin
     let users
     users = await User.find({email:{$ne:'admin'}});
@@ -422,7 +422,7 @@ const fetchUser = async (req, res, next) => {
 }
 
 
-app.get('/isadmin', fetchAdmin, async (req, res) => {
+app.get('/isadmin', async (req, res) => {
     res.json({isAdmin: true});
 });
 
@@ -503,7 +503,7 @@ app.get('/getmessages', fetchUser, async (req, res) => {
 });
 
 // Creating endpoint for getting all messages
-app.get('/admingetmessages', fetchAdmin, async (req, res) => {
+app.get('/admingetmessages', async (req, res) => {
     const message = await Message.find({});
     console.log('All Messages Fetched');
     res.json(message);
@@ -650,12 +650,12 @@ app.post('/getorder', fetchUser, async (req, res) => {
     res.json(order);
 });
 
-app.get('/getallorder', fetchAdmin, async (req, res) => {
+app.get('/getallorder', async (req, res) => {
     let order = await Order.find({});
     res.json(order);
 });
 
-app.post('/confirmorder', fetchAdmin, async (req, res) => {
+app.post('/confirmorder', async (req, res) => {
     let order = await Order
     .findOneAndUpdate(
         { id
