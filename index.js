@@ -82,7 +82,7 @@ const fetchAdmin = async (req, res, next) => {
 app.post("/upload", fetchAdmin, upload.single("product"), (req, res) => {
     res.json({
         success: 1,
-        image_url: `/images/${req.file.filename}`
+        image_url: `https://deploynt208backend.onrender.com/images/${req.file.filename}`
     });
 });
 
