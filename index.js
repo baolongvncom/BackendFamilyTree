@@ -422,7 +422,7 @@ const fetchUser = async (req, res, next) => {
 }
 
 
-app.get('/isadmin', async (req, res) => {
+app.get('/isadmin', fetchAdmin, async (req, res) => {
     res.json({isAdmin: true});
 });
 
