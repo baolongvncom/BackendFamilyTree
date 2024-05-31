@@ -84,6 +84,7 @@ app.post("/upload", upload.single("product"), (req, res) => {
 
     imgur.uploadFile(`./upload/images/${req.file.filename}`)
     .then((json) => {
+        console.log("imgur data: " + json.data);
         console.log(json.data.link);
         res.json({
             success: 1,
