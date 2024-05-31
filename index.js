@@ -56,7 +56,7 @@ const upload = multer({
 })
 
 // Creating Upload Endpoint for images
-app.use("/images", express.static("upload/images"));
+// app.use("/images", express.static("upload/images"));
 
 const fetchAdmin = async (req, res, next) => {
     const token = req.header("auth-token");
@@ -80,9 +80,21 @@ const fetchAdmin = async (req, res, next) => {
 }
 
 app.post("/upload", upload.single("product"), (req, res) => {
-    res.json({
-        success: 1,
-        image_url: `https://deploynt208backend.onrender.com/images/${req.file.filename}`
+
+    imgur.uploadFile(`./upload/images/${req.file.filename}`)
+    .then((json) => {
+        console.log(json.data.link);
+        res.json({
+            success: 1,
+            image_url: json.data.link
+        });
+    })
+    .catch((err) => {
+        console.error(err.message);
+        res.json({
+            success: 0,
+            message: err.message
+        });
     });
 });
 
