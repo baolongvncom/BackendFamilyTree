@@ -3,6 +3,7 @@ const http = require('http');
 const express = require('express');
 const app = express();
 const bcrypt = require('bcryptjs');
+const imgur = require('imgur')
 
 let isAdminExist = false;
 
