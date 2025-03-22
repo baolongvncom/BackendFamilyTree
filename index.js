@@ -1,972 +1,916 @@
 const port = 4000;
-const http = require('http');
-const express = require('express');
+const http = require("http");
+const express = require("express");
 const app = express();
-const bcrypt = require('bcryptjs');
-const imgur = require('imgur')
+const bcrypt = require("bcryptjs");
+const imgur = require("imgur");
+const fs = require("fs");
 
 let isAdminExist = false;
 
 const server = http.createServer(app);
 // Pass a http.Server instance to the listen method
-const io = require('socket.io')(server, {
-    cors: {
-        origin : '*',
-    }
+const io = require("socket.io")(server, {
+  cors: {
+    origin: "*",
+  },
 });
-const cors = require('cors');
+const cors = require("cors");
 const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const path = require("path");
 const uuid = require("uuid");
-const Product = require('./models/Product');
-const User = require('./models/User');
-const Message = require('./models/Message');
-const Order = require('./models/Order');
+
+const User = require("./models/User");
+const TreeInfo = require("./models/TreeInfo");
+const Member = require("./models/Member");
+const Relationship = require("./models/Relationship");
+
+var secretKey = "family_tree";
+
 require("dotenv/config");
-const { PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, PAYPAL_API } = process.env;
+// const { PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, PAYPAL_API } = process.env;
+
 app.use(express.json());
 app.use(cors());
 
 // UID Generation
 function generateID() {
-    return uuid.v4();
+  return uuid.v4();
 }
 
 // Database connection with MongoDB
-MongoDB_URI = "mongodb+srv://baolongvncom:baolong123456@cluster0.0vgsjr7.mongodb.net/WatchShop";
+// MongoDB_URI = "mongodb+srv://baolongvncom:baolong123456@cluster0.0vgsjr7.mongodb.net/FamilyTree";
+MongoDB_URI = "mongodb://localhost:27017/FamilyTree";
 mongoose.connect(MongoDB_URI);
 
+async function updateFields(model, id, fields) {
+  try {
+    if (!model || !id || !fields || Object.keys(fields).length === 0) {
+      throw new Error("Thiếu thông tin cập nhật.");
+    }
+
+    const updatedRecord = await model.findByIdAndUpdate(id, fields, {
+      new: true,
+    });
+
+    return !!updatedRecord;
+  } catch (error) {
+    console.error("Lỗi cập nhật bản ghi:", error);
+    return false;
+  }
+}
 
 // API Creation
-app.get('/', (req, res) => {
-    res.send("Hello from the server");
+app.get("/", (req, res) => {
+  res.send("Hello from the server");
 });
 
 // Image Storage Engine
 const storage = multer.diskStorage({
-    destination: "./upload/images/",
-    filename:(req, file, cb) => {
-        cb(null, file.fieldname + "_" + Date.now() + path.extname(file.originalname));
-    }
+  destination: "./upload/images/",
+  filename: (req, file, cb) => {
+    cb(
+      null,
+      file.fieldname + "_" + Date.now() + path.extname(file.originalname)
+    );
+  },
 });
 
 const upload = multer({
-    storage: storage,
-})
+  storage: storage,
+});
 
 // Creating Upload Endpoint for images
 // app.use("/images", express.static("upload/images"));
 
 const fetchAdmin = async (req, res, next) => {
-    const token = req.header("auth-token");
-    if (!token) {
-        res.send({
-            isAdmin: false,
-            errors: "Please authenticate using a valid token",
-        });
-    }
-    else
-        try {
-            const data = jwt.verify(token, "admin");
-            req.user = data.user;
-            next();
-        } catch (error) {
-            res.send({
-                isAdmin: false,
-                errors: "Please authenticate using a valid token",
-            });
-        }
-}
-
-app.post("/upload", upload.single("product"), (req, res) => {
-
-    imgur.uploadFile(`./upload/images/${req.file.filename}`)
-    .then((json) => {
-        console.log("imgur data: " + json.data);
-        console.log(json.data.link);
-        res.json({
-            success: 1,
-            image_url: json.data.link
-        });
-    })
-    .catch((err) => {
-        console.error(err.message);
-        res.json({
-            success: 0,
-            message: err.message
-        });
+  const token = req.header("auth-token");
+  if (!token) {
+    res.send({
+      isAdmin: false,
+      message: "Please authenticate using a valid token",
     });
-});
-
-// Add Product API
-
-app.post('/addproduct', async (req, res) => {
-    const product = new Product(
-        {
-            id: generateID(),
-            name: req.body.name,
-            price: req.body.price,
-            image: req.body.image,
-            brand: req.body.brand,
-            model: req.body.model,
-            year: req.body.year,
-            sex: req.body.sex,
-            size: req.body.size,
-            available: req.body.available,
-        }
-    )
-    console.log(product);
-    await product.save();
-    console.log('Saved');
-    res.json(
-        {
-            success: true,
-            name: req.body.name,
-        }
-    );
-    
-}
-);
-
-// Remove Product API
-app.post('/removeproduct', async (req, res) => {
-    const product = await Product.findOneAndDelete({ id: req.body.id });
-    if (product) {
-        res.json(
-            {
-                success: true,
-                name: product.name,
-                id: product.id,
-            }
-        );
-        console.log(product);
-        console.log("Product Removed");
-    } else {
-        res.json(
-            {
-                success: false,
-                name: "Product not found",
-            }
-        );
-        console.log("Product not found");
+  } else
+    try {
+      const data = jwt.verify(token, "admin");
+      req.user = data.user;
+      next();
+    } catch (error) {
+      res.send({
+        isAdmin: false,
+        message: "Please authenticate using a valid token",
+      });
     }
-}
-);
+};
 
+const fetchUser = async (req, res, next) => {
+  const token = req.header("auth-token");
+  if (!token) {
+    res.send({
+      success: false,
+      message: "Please authenticate using a valid token",
+    });
+  } else
+    try {
+      const data = jwt.verify(token, secretKey);
+      req.user = data.user;
+      next();
+    } catch (error) {
+      res.send({
+        success: false,
+        message: "Please authenticate using a valid token",
+      });
+    }
+};
 
+const fetchEditTreeId = async (req, res, next) => {
+  const tree_id = req.body.tree_id;
+  if (!tree_id) {
+    res.send({
+      success: false,
+      message: "Please send a valid Tree Id",
+    });
+  } else
+    try {
+      let tree = await TreeInfo.findOne({ _id: tree_id });
 
-// Creating API for User Authentication
-// Creating Endpoint for registering a user
-app.post('/signup', async (req, res) => {
-    let check = await User.findOne({ email: req.body.email });
-
-    const password = req.body.password;
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-    if (check) {
+      if (!tree) {
         return res
-        .status(400)
-        .json(
-            {
-                success: false,
-                message: "Email already exists",
-            }
-        );
+          .status(404)
+          .json({ success: false, message: "Tree not found" });
+      }
+
+      const userRole = tree.role?.[req.user.email];
+
+      if (userRole === "owner" || userRole === "editor") {
+        return next();
+      }
+
+      res.status(403).json({
+        success: false,
+        message: "You do not have permission to edit this tree",
+      });
+    } catch (error) {
+      res.send({
+        success: false,
+        message: "Please send a valid Tree Id",
+      });
     }
-    let cart = {};
-    let order = [];
-    cart["0"] = 0;
-    order.push("0");
-    const user = new User(
-        {
-            username: req.body.username,
-            email: req.body.email,
-            password: hashedPassword,
-            cartData: cart,
-            orderData: order,
-        }
-    );
+};
 
-    await user.save();
+const fetchViewTreeId = async (req, res, next) => {
+  const tree_id = req.body.tree_id;
+  if (!tree_id) {
+    res.send({
+      success: false,
+      message: "Please send a valid Tree Id",
+    });
+  } else
+    try {
+      let tree = await TreeInfo.findOne({ _id: tree_id });
 
-    const data = {
-        user:{
-            id: user.id,
-        }
+      if (!tree) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Tree not found" });
+      }
+
+      const userRole = tree.role?.[req.user.email];
+
+      if (
+        userRole === "owner" ||
+        userRole === "editor" ||
+        userRole === "viewer"
+      ) {
+        return next();
+      }
+
+      res.status(403).json({
+        success: false,
+        message: "You do not have permission to view this tree",
+      });
+    } catch (error) {
+      res.send({
+        success: false,
+        message: "Please send a valid Tree Id",
+      });
     }
+};
 
-    const token = jwt.sign(data, "secret_ecom");
-    let message = await Message.findOne({ user_id: user.id });
-    
-            if (!message) {
-                message = new Message({ user_id: user.id, messages: [] });
-                await message.save();
-            }
-    res.json(
-        {
-            success: true,
-            token: token,
-        }
-    );
-}
-);
+const fetchViewMember = async (req, res, next) => {
+  const member_id = req.body.member_id;
+  if (!member_id) {
+    res.send({
+      success: false,
+      message: "Please send a valid Member Id 123",
+    });
+  } else
+    try {
+      let member = await Member.findOne({ _id: member_id });
+      if (!member) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Member not found" });
+      }
+
+      const tree_id = member.tree_id;
+      let tree = await TreeInfo.findOne({ _id: tree_id });
+
+      if (!tree) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Tree of Member Info Error" });
+      }
+
+      const userRole = tree.role?.[req.user.email];
+
+      if (
+        userRole === "owner" ||
+        userRole === "editor" ||
+        userRole === "viewer"
+      ) {
+        return next();
+      }
+
+      res.status(403).json({
+        success: false,
+        message: "You do not have permission to view this member",
+      });
+    } catch (error) {
+      res.send({
+        success: false,
+        message: "Please send a valid Member Id",
+      });
+    }
+};
+
+// Creating Endpoint for registering a user
+app.post("/api/signup", async (req, res) => {
+  let check = await User.findOne({ email: req.body.email });
+
+  const password = req.body.password;
+  const salt = await bcrypt.genSalt(10);
+  const hashedPassword = await bcrypt.hash(password, salt);
+  if (check) {
+    return res.status(400).json({
+      success: false,
+      message: "Email already exists",
+    });
+  }
+  const user = new User({
+    username: req.body.username,
+    email: req.body.email,
+    password: hashedPassword,
+  });
+
+  await user.save();
+
+  const data = {
+    user: {
+      _id: user._id,
+      username: req.body.username,
+      email: req.body.email,
+    },
+  };
+
+  const token = jwt.sign(data, secretKey);
+  res.json({
+    success: true,
+    token: token,
+  });
+});
 
 // Admin signup
-app.get('/adminsignup', async (req, res) => {
-    let check = await User.findOne({ email: 'admin' });
-    if (check) {
-        res.json({success: false, message: "Admin already exists"});
-        return;
-    }
-    let cart = {};
-    let order = [];
+app.get("/api/adminsignup", async (req, res) => {
+  let check = await User.findOne({ email: "admin" });
+  if (check) {
+    res.json({ success: false, message: "Admin already exists" });
+    return;
+  }
 
-    const password = 'admin';
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+  const password = "admin";
+  const salt = await bcrypt.genSalt(10);
+  const hashedPassword = await bcrypt.hash(password, salt);
 
-    cart["0"] = 0;
-    order.push("0");
-    const user = new User(
-        {
-            username: 'admin',
-            email: 'admin',
-            password: hashedPassword,
-            cartData: cart,
-            orderData: order,
-        }
-    );
+  cart["0"] = 0;
+  order.push("0");
+  const user = new User({
+    username: "admin",
+    email: "admin",
+    password: hashedPassword,
+  });
 
-    await user.save();
+  await user.save();
 
-    const data = {
-        user:{
-            id: user.id,
-        }
-    }
+  const data = {
+    user: {
+      _id: user._id,
+      username: "admin",
+      email: "admin",
+    },
+  };
 
-    const token = jwt.sign(data, "admin");
-    isAdminExist = true;
-    let message = await Message.findOne({ user_id: user.id });
-    
-            if (!message) {
-                message = new Message({ user_id: user.id, messages: [] });
-                await message.save();
-            }
-    res.json(
-        {
-            success: true,
-            token: token,
-        }
-    );
-}
-);
-
+  const token = jwt.sign(data, "admin");
+  isAdminExist = true;
+  res.json({
+    success: true,
+    token: token,
+  });
+});
 
 // Creating endpoint for user/admin login
-app.post('/login', async (req, res) => {
-    let user = await User.findOne({ email: req.body.email });
-    if (user) 
-    {
-        // Dùng bcrypt để so sánh password
-        const passCompare = await bcrypt.compare(req.body.password, user.password);
-        if (passCompare) 
-        {
-            const data = {
-                user:{
-                    id: user.id,
-                }
-            }
-            const token = req.body.email === 'admin'?jwt.sign(data, "admin"):jwt.sign(data, "secret_ecom");
-            let message = await Message.findOne({ user_id: user.id });
-    
-            if (!message) {
-                message = new Message({ user_id: user.id, messages: [] });
-                await message.save();
-            }
-            req.body.email === 'admin' ?res.json(
-                {
-                    success: true,
-                    token: token,
-                    admin: true,
-                }
-            ):
-            res.json(
-                {
-                    success: true,
-                    token: token,
-                    admin: false,
-                }
-            )
-            ;
-        }
-        else
-        {
-            res.json(
-                {
-                    success: false,
-                    message: "Invalid Password",
-                }
-            );
-        }
-    }
-    else
-    {
-        res.json(
-            {
-                success: false,
-                message: "User not found",
-            }
-        );
-    }
-        
-});
-
-// Get All Products API
-app.get('/allproducts', async (req, res) => {
-    const products = await Product.find({});
-    res.json(products);
-    console.log("All Products Fetched");
-}
-);
-
-// Delete Image API
-app.delete("/deleteimage", async (req, res) => {
-    const image = req.body.image;
-    console.log(image);
-    const image_path = path.join("upload", image);
-    fs.unlink(image_path, (err) => {
-        if (err) {
-            console.error(err);
-            res.json({success: false});
-            return;
-        }
-        res.json({success: true});
-    });
-});
-
-// Update Product API
-app.post("/updateproduct", fetchAdmin, upload.single("product"), async (req, res) => {
-    const product
-    = await Product.findOneAndUpdate(
-        { id
-            : req.body.id },
-        {
-            name: req.body.name,
-            price: req.body.price,
-            image: req.body.image,
-            brand: req.body.brand,
-            model: req.body.model,
-            year: req.body.year,
-            size: req.body.size,
-            sex: req.body.sex,
-        }
-    );
-    if (product) {
-        res.json(
-            {
-                success: true,
-                message: req.body.name,
-            }
-        );
-        console.log("Product Updated");
-    } else {
-        res.json(
-            {
-                success: false,
-                message: "Product not found",
-            }
-        );
-        console.log("Product not found");
-    }
-}
-);
-
-
-// Creating endpoint for getting all users data
-app.get('/allusers', async (req, res) => {
-    // Fetch all users from database except admin
-    let users
-    users = await User.find({email:{$ne:'admin'}});
-    res.json(users);
-    console.log(users);
-    console.log("All Users Fetched");
-}
-);
-
-// Creating endpoint for newcollection data
-
-app.get('/newcollections', async (req, res) => {
-    let products = await Product.find({});
-    let newcollection = products.slice(1).slice(-8);
-    console.log("New Collection Fetched");
-    res.send(newcollection);
-}
-);
-
-// Creating endpoint for popular women watches
-app.get('/popularinwomen', async (req, res) => {
-    let products = await Product.find({category:"women"});
-    let popular_in_women = products.slice(0, 4);
-    console.log("Popular Women Watches Fetched");
-    res.send(popular_in_women);
-}
-);
-
-// Creating middleware for user authentication
-const fetchUser = async (req, res, next) => {
-    const token = req.header("auth-token");
-    if (!token) {
-        res.status(401).send({
-            errors: "Please authenticate using a valid token",
-        });
-    }
-    else
-        try {
-            const data = jwt.verify(token, "secret_ecom");
-            req.user = data.user;
-            next();
-        } catch (error) {
-            res.status(401).send({
-                errors: "Please authenticate using a valid token",
-            });
-        }
-}
-
-
-app.get('/isadmin', fetchAdmin, async (req, res) => {
-    res.json({isAdmin: true});
-});
-
-
-// Creating endpoint for adding products in cartdata
-app.post('/addtocart', fetchUser, async (req, res) => {
-    let userData = await User.findOne({ _id: req.user.id });
-    if (req.body.itemId in userData.cartData) {
-        userData.cartData[req.body.itemId] += 1;
-    }
-    else {
-        userData.cartData[req.body.itemId] = 1;
-    }
-    await User.findOneAndUpdate({ _id: req.user.id }, { cartData:userData.cartData });
-    res.send("Product Added to Cart");
-});
-
-
-// creating endpoint for removing products from cartdata
-app.post('/removefromcart', fetchUser, async (req, res) => {
-    let userData = await User.findOne({ _id: req.user.id });
-    if (req.body.itemId in userData.cartData) {
-        userData.cartData[req.body.itemId] -= 1;
-        if (userData.cartData[req.body.itemId] === 0) {
-            delete userData.cartData[req.body.itemId];
-        }
-        await User.findOneAndUpdate({ _id: req.user.id }, { cartData:userData.cartData });
-        res.send("Product Removed from Cart");
-    }
-    else {
-        res.send("Product not found in cart");
-    }
-    
-});
-
-// creating endpoint for removing an entire product from cartdata
-app.post('/removeallfromcart', fetchUser, async (req, res) => {
-    let userData = await User.findOne({ _id: req.user.id });
-    if (req.body.itemId in userData.cartData) {
-        delete userData.cartData[req.body.itemId];
-        await User
-        .findOneAndUpdate(
-            { _id: req.user.id }, 
-            { cartData: userData.cartData},
-        );
-        res.send("Product Removed from Cart");
-    }
-    else {
-        res.send("Product not found in cart");
-    }
-
-});
-
-
-// Creating endpoint for getting cartdata
-app.post('/getcart', fetchUser, async (req, res) => {
-    console.log("Get Cart Data");
-    let userData = await User.findOne({ _id: req.user.id });
-    res.json(userData.cartData);
-});
-
-// Creating endpoint for user profile
-app.post('/getinfo', fetchUser,async(req,res)=>{
-    let user = await User.findOne({_id:req.user.id});
-    res.json(user);
-  })
-
-// Creating endpoint for getiing chat messages
-app.get('/getmessages', fetchUser, async (req, res) => {
-    let message = await Message.find({
-        user_id:req.user.id,
-      });
-    message = message[0];
-    if (!message) {
-        return res.json({messages: []});
-    }
-    res.json(message.messages);
-});
-
-// Creating endpoint for getting all messages
-app.get('/admingetmessages', async (req, res) => {
-    const message = await Message.find({});
-    console.log('All Messages Fetched');
-    res.json(message);
-});
-
-const fs = require('fs');
-
-const imageSearchStorage = multer.diskStorage({
-    destination: "./upload/imageSearch/",
-    filename:(req, file, cb) => {
-        cb(null, file.fieldname + "_" + Date.now() + path.extname(file.originalname));
-    }
-});
-
-const imageSearchUpload = multer(
-    {
-        storage: imageSearchStorage,
-    })
-
-    // Creating Upload Endpoint for imageSearch
-app.use("/imagesearchstorage", express.static("upload/imageSearch"));
-
-app.post('/imagesearch',imageSearchUpload.single('query_img'), async (req, res) => {
-    try {
-        // Kiểm tra xem có file query_img không
-        if (!req.file) {
-            return res.status(400).send('No image was uploaded.');
-        }
-        // Tạo formData mới để gửi đến URL khác
-        let imageSearchformData = new FormData();
-
-        console.log(req.file);
-
-        imageSearchformData.append('query_img', req.file.filename);
-
-        // Gửi formData đến URL khác
-        const response = await fetch('http://localhost:5001/imagesearch', {
-            method: 'POST',
-            body: imageSearchformData
-        });
-
-        // Đọc và trả về phản hồi từ URL khác
-        res.json(await response.json());
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('Internal Server Error');
-    }
-});
-
-// Midlleware for reatrain model
-app.post('/retrain', async (req, res) => {
-    try {
-        // Tao formData moi de gui den URL khac
-        let formData = new FormData();
-        console.log(req.body.image_filename);
-        formData.append('image_filename', req.body.image_filename);
-        // Gui formData den URL khac
-        const response = await fetch(
-            'http://localhost:5001/retrain',
-            {
-                method: 'POST',
-                body: formData,
-            }
-        );
-        res.json(await response.json());
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('Internal Server Error');
-    }
-});
-
-app.post('/changeinfo', fetchUser, async(req,res)=>{
-    if (req.body.email === 'admin') {
-        res.json({success:false,errors:"Invalid Email"});
-        return;
-    }
-    let userData = await User.findOne({ _id: req.user.id });
-    userData.username = req.body.username;
-    userData.email = req.body.email;
-    await User.findOneAndUpdate({ _id: req.user.id }, {username:userData.username, email:userData.email});
-    console.log("Updated User Info");
-    res.json({success:true,alert:"User Info Updated"});
-    //res.json({success:false,errors:"Wrong Email Id"})
-  })
-
-app.post('/changepassword', fetchUser, async(req,res)=>{
-let userData = await User.findOne({ _id: req.user.id });
-const oldPassword = req.body.oldpassword;
-const newPassword = req.body.newpassword;
-const passCompare = await bcrypt.compare(oldPassword, userData.password);
-if (passCompare) {
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(newPassword, salt);
-    await User.findOneAndUpdate({ _id: req.user.id }, { password: hashedPassword });
-    res.json({success: true, message: "Password Changed Successfully"});
-}
-else {
-    res.json({success: false, message: "Invalid Password"});
-}
-})
-
-
-  // Creating endpoint for user to order products
-app.post('/order', fetchUser, async (req, res) => {
-    let userData = await User.findOne({ _id: req.user.id });
-    let order = new Order(
-        {
-            id: generateID(),
-            user_id: req.user.id,
-            products: req.body.products,
-            total: req.body.total,
-            fullname: req.body.fullname,
-            email: req.body.email,
-            phone: req.body.phone,
-            address: req.body.address,
-            province: req.body.province,
-            city: req.body.city,
-            ward: req.body.ward,
-            time: req.body.time,
-            status: "Pending",
-            payment: req.body.payment,
-        }
-    );
-    await order.save();
-    userData.orderData.push(order._id);
-    userData.cartData = {"0": 0};
-    await User
-    .findOneAndUpdate(
-        { _id: req.user.id }, 
-        { cartData: userData.cartData},
-    );
-    await User
-    .findOneAndUpdate(
-        { _id: req.user.id }, 
-        { orderData: userData.orderData},
-    );
-    res.json({success: true, message: "Order Placed Successfully"});
-}
-);
-
-// Creating endpoint for getting order by user id
-app.post('/getorder', fetchUser, async (req, res) => {
-    let order = await Order.find({ user_id: req.user.id });
-    res.json(order);
-});
-
-app.get('/getallorder', async (req, res) => {
-    let order = await Order.find({});
-    res.json(order);
-});
-
-app.post('/confirmorder', async (req, res) => {
-    let order = await Order
-    .findOneAndUpdate(
-        { id
-            : req.body.id },
-        {
-            status: "Confirmed",
-        }
-    );
-    if (order) {
-        res.json(
-            {
-                success: true,
-                message: "Order Confirmed",
-            }
-        );
-        console.log("Order Confirmed");
-    } else {
-        res.json(
-            {
-                success: false,
-                message: "Order not found",
-            }
-        );
-        console.log("Order not found");
-    }
-}
-);
-
-// Authentication Middleware
-// io.use( async (socket, next) => {
-//     const token = socket.handshake.auth.token;
-//     if (!token) {
-//         return next(new Error("Please authenticate using a valid token"));
-//     }
-//     try {
-//         const data = jwt.verify(token, "secret_ecom");
-//         socket.user = data.user;
-//         socket.join(data.user.id);
-//         console.log("User connected: ", data.user.id);
-//         next();
-//     } catch (error) {
-//         return next(new Error("Please authenticate using a valid token"));
-//     }
-//     try {
-//         const deocode_admin = jwt.verify(token, "admin");
-//         socket.user = deocode_admin.user;
-//         console.log("Admin connected: ", deocode_admin.user.id);
-//         next();
-//     }
-//     catch (error) {
-//         return next(new Error("Please authenticate using a valid token"));
-//     }
-// });
-// Creating Websocket Server
-io.on('connection', async (socket) => {
-    console.log(socket.id);
-    const token = socket.handshake.auth.token;
-    try {
-        const decoded = jwt.verify(token, 'admin');
-        // Get all users from database and join their rooms by their id
-        const users = await User.find({email:{$ne:'admin'}});
-        users.forEach(user => {
-            socket.join(user._id);
-            console.log("Admin connected to user: ", user._id);
-        });
-    }
-    catch (error) {
-        console.error('Error Admin connecting to the server:', error);
-    }
-    
-    // Hello from the server
-    socket.emit('message', 'Hello from the server');
-
-    socket.on('message', (data) => {
-        console.log(data);
-    });
-    
-
-
-    // Admin add message with user id
-    socket.on('adminAddMessage', async (data, callback) => {
-            try
-            {
-                await Message.updateOne(
-                    { user_id: data.user_id }, // Điều kiện tìm kiếm
-                    {
-                        $push: {
-                            messages: {
-                                content: data.content,
-                                timeStamp: Date.now(),
-                                userMessage: data.userMessage
-                            }
-                        }
-                    }
-                );
-                io.emit('getMessage');
-                io.emit('adminGetMessage');
-                callback("Message sent");
-                console.log('Đã thêm tin nhắn admin thành công!');
-            }
-            catch (error) {
-                console.error('Lỗi khi admin thêm tin nhắn:', error);
-            }    
-    });
-
-
-    // Add Message Event
-    socket.on('addMessage', async (data, callback) => {
-        // Add message to database
-        try {
-            // Giai mã token
-            const decoded = jwt.verify(data.user_id, 'secret_ecom');
-
-
-            let message = await Message.findOne({ user_id: decoded.user.id });
-    
-            if (!message) {
-                message = new Message({ user_id: decoded.user.id, messages: [] });
-                await message.save();
-            }
-            await Message.findOneAndUpdate(
-                { user_id: decoded.user.id }, // Điều kiện tìm kiếm
-                {
-                    $push: {
-                        messages: {
-                            content: data.content,
-                            timeStamp: Date.now(),
-                            userMessage: data.userMessage
-                        }
-                    }
-                }
-            );
-            
-            console.log('Đã thêm tin nhắn thành công!');
-            callback("Message sent");
-            io.emit('adminGetMessage');
-            io.emit('getMessage');
-        } catch (error) {
-            console.error('Lỗi khi thêm tin nhắn:', error);
-        }             
-    });
-});
-
-//TODO: PAYPAL
-// host static files
-//app.use(express.static("client"));
-
-
-/**
- * Generate an OAuth 2.0 access token for authenticating with PayPal REST APIs.
- * see https://developer.paypal.com/api/rest/authentication/
- */
-const generateAccessToken = async () => {
-    try {
-      if (!PAYPAL_CLIENT_ID || !PAYPAL_CLIENT_SECRET) {
-        throw new Error("MISSING_API_CREDENTIALS");
-      }
-      const auth = Buffer.from(
-        PAYPAL_CLIENT_ID + ":" + PAYPAL_CLIENT_SECRET,
-      ).toString("base64");
-      const response = await fetch(`${PAYPAL_API}/v1/oauth2/token`, {
-        method: "POST",
-        body: "grant_type=client_credentials",
-        headers: {
-          Authorization: `Basic ${auth}`,
+app.post("/api/signin", async (req, res) => {
+  let user = await User.findOne({ email: req.body.email });
+  if (user) {
+    // Dùng bcrypt để so sánh password
+    const passCompare = await bcrypt.compare(req.body.password, user.password);
+    if (passCompare) {
+      const data = {
+        user: {
+          _id: user._id,
+          username: user.username,
+          email: user.email,
         },
-      });
-  
-      const data = await response.json();
-      return data.access_token;
-    } catch (error) {
-      console.error("Failed to generate Access Token:", error);
-    }
-  };
-  
-  /**
-   * Create an order to start the transaction.
-   * see https://developer.paypal.com/docs/api/orders/v2/#orders_create
-   */
-  const createOrder = async (cart) => {
-    // use the cart information passed from the front-end to calculate the purchase unit details
-    console.log(
-      "shopping cart information passed from the frontend createOrder() callback:",
-      cart,
-    );
-    
-    const accessToken = await generateAccessToken();
-    const url = `${PAYPAL_API}/v2/checkout/orders`;
-    // let message = await orderDetail.findOne({ total: totalCartAmount });  
-    const payload = {
-      intent: "CAPTURE",
-      purchase_units: [
-        {
-          amount: {
-            currency_code: "USD",
-            // value: orderDetail.total, 
-            value: "110.00"  
-          },
-        },
-      ],
-    };
-  
-    const response = await fetch(url, {
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-        // Uncomment one of these to force an error for negative testing (in sandbox mode only). Documentation:
-        // https://developer.paypal.com/tools/sandbox/negative-testing/request-headers/
-        // "PayPal-Mock-Response": '{"mock_application_codes": "MISSING_REQUIRED_PARAMETER"}'
-        // "PayPal-Mock-Response": '{"mock_application_codes": "PERMISSION_DENIED"}'
-        // "PayPal-Mock-Response": '{"mock_application_codes": "INTERNAL_SERVER_ERROR"}'
-      },
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-  
-    return handleResponse(response);
-  };
-  
-  /**
-   * Capture payment for the created order to complete the transaction.
-   * see https://developer.paypal.com/docs/api/orders/v2/#orders_capture
-   */
-  const captureOrder = async (orderID) => {
-    const accessToken = await generateAccessToken();
-    const url = `${PAYPAL_API}/v2/checkout/orders/${orderID}/capture`;
-  
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-        // Uncomment one of these to force an error for negative testing (in sandbox mode only). Documentation:
-        // https://developer.paypal.com/tools/sandbox/negative-testing/request-headers/
-        // "PayPal-Mock-Response": '{"mock_application_codes": "INSTRUMENT_DECLINED"}'
-        // "PayPal-Mock-Response": '{"mock_application_codes": "TRANSACTION_REFUSED"}'
-        // "PayPal-Mock-Response": '{"mock_application_codes": "INTERNAL_SERVER_ERROR"}'
-      },
-    });
-  
-    return handleResponse(response);
-  };
-  
-  async function handleResponse(response) {
-    try {
-      const jsonResponse = await response.json();
-      return {
-        jsonResponse,
-        httpStatusCode: response.status,
       };
-    } catch (err) {
-      const errorMessage = await response.text();
-      throw new Error(errorMessage);
+      const token =
+        req.body.email === "admin"
+          ? jwt.sign(data, "admin")
+          : jwt.sign(data, secretKey);
+      req.body.email === "admin"
+        ? res.json({
+            success: true,
+            token: token,
+            admin: true,
+          })
+        : res.json({
+            success: true,
+            token: token,
+            admin: false,
+          });
+    } else {
+      res.json({
+        success: false,
+        message: "Invalid Password",
+      });
+    }
+  } else {
+    res.json({
+      success: false,
+      message: "User not found",
+    });
+  }
+});
+
+app.get("/api/isadmin", fetchAdmin, async (req, res) => {
+  res.json({ success: true });
+});
+
+app.get("/api/isuser", fetchUser, async (req, res) => {
+  res.json({
+    success: true,
+    email: req.user.email,
+    username: req.user.username,
+  });
+});
+
+app.post("/api/upload", upload.single("treeInfo"), (req, res) => {
+  imgur
+    .uploadFile(`./upload/images/${req.file.filename}`)
+    .then((json) => {
+      console.log(JSON.stringify(json, null, 2));
+      console.log("imgur link: ", json.link);
+      res.json({
+        success: 1,
+        image_url: json.link,
+      });
+    })
+    .catch((err) => {
+      console.error(err.message);
+      res.json({
+        success: 0,
+        message: err.message,
+      });
+    });
+});
+
+// Add TreeInfo API
+
+async function generateUniqueCode() {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let code;
+  let exists = true;
+
+  while (exists) {
+    code = "#";
+    for (let i = 0; i < 5; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+
+    // Kiểm tra xem mã đã tồn tại trong database chưa
+    exists = await TreeInfo.exists({ code: code });
+  }
+
+  return code;
+}
+
+app.post("/api/treeinfo/add", fetchUser, async (req, res) => {
+  const new_code = await generateUniqueCode();
+  const treeInfo = new TreeInfo({
+    name: req.body.name,
+    code: new_code,
+    image: req.body.image,
+    description: req.body.description,
+    role: req.body.role,
+  });
+  await treeInfo.save();
+  console.log("New Tree Saved", treeInfo);
+  res.json({
+    success: true,
+  });
+});
+
+app.get("/api/treeinfo/get", fetchUser, async (req, res) => {
+  try {
+    const treeInfos = await TreeInfo.find();
+    const filteredTreeInfos = treeInfos
+      .filter(
+        (info) => info.role && Object.keys(info.role).includes(req.user.email)
+      )
+      .map((info) => ({
+        ...info.toObject(),
+        role: info.role[req.user.email],
+      }));
+
+    res.json({ success: 1, treeInfos: filteredTreeInfos });
+  } catch (error) {
+    console.error("Error fetching TreeInfos:", error);
+    res.status(500).json({ success: 0, message: "Internal Server Error" });
+  }
+});
+
+app.post("/api/treeinfo/find", fetchUser, async (req, res) => {
+  try {
+    const treeInfo = await TreeInfo.findOne({ code: req.body.code });
+    res.json({ success: 1, treeInfo });
+  } catch (error) {
+    console.error("Error fetching TreeInfos:", error);
+    res.status(500).json({ success: 0, message: "Internal Server Error" });
+  }
+});
+
+app.post("/api/family/get", fetchUser, fetchViewTreeId, async (req, res) => {
+  try {
+    const family = await Member.find({ tree_id: req.body.tree_id });
+    // const tree = await TreeInfo.findOne({ _id: req.body.tree_id });
+
+
+    res.json({
+      success: true,
+      family,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: `Internal Server Error ${error}`,
+    });
+  }
+});
+
+app.post("/api/family/add", fetchUser, fetchEditTreeId, async (req, res) => {
+  try {
+    const member = new Member({
+      tree_id: req.body.tree_id,
+      full_name: req.body.full_name,
+      date_of_birth: req.body.date_of_birth,
+      place_of_birth: req.body.place_of_birth,
+      gender: req.body.gender,
+      job: req.body.job,
+      address: req.body.address,
+      image: req.body.image,
+      description: req.body.description,
+    });
+    await member.save();
+    console.log("New Member Saved", member);
+    res.json({
+      success: true,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+});
+
+app.post("/api/member/get", fetchUser, fetchViewMember, async (req, res) => {
+  try {
+    const member = await Member.findOne({ _id: req.body.member_id });
+    res.json({
+      success: true,
+      member,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+});
+
+app.get("/api/member/getunmarried", fetchUser, async (req, res) => {
+  try {
+    const members = await Member.find({ married: false });
+    res.json({
+      success: true,
+      members,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+});
+
+app.get("/api/member/getcouples", fetchUser, async (req, res) => {
+  try {
+    const relationships = await Relationship.find();
+
+    const new_relationships = await Promise.all(
+      relationships.map(async (relationship) => {
+        if (relationship.type === "couples") {
+          const [husband_data, wife_data] = await Promise.all([
+            Member.findOne({ _id: relationship.data.husband }),
+            Member.findOne({ _id: relationship.data.wife }),
+          ]);
+
+          return {
+            _id: relationship._id,
+            type: "couples",
+            data: {
+              husband: husband_data,
+              wife: wife_data,
+            },
+          };
+        }
+        return relationship;
+      })
+    );
+
+    res.json({
+      success: true,
+      relationships: new_relationships,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+});
+
+app.get("/api/member/getunparents", fetchUser, async (req, res) => {
+  try {
+    const members = await Member.find({ being_child: false });
+    res.json({
+      success: true,
+      members,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+});
+
+app.post(
+  "/api/couples_relationship/get",
+  fetchUser,
+  fetchViewMember,
+  async (req, res) => {
+    try {
+      const member = await Member.findOne({ _id: req.body.member_id });
+      if (member) {
+        if (member.couples_relationship) {
+          const relationship = await Relationship.findOne({
+            _id: member.couples_relationship,
+          });
+          if (relationship.type === "couples") {
+            const [husband_data, wife_data, children_data] = await Promise.all([
+              Member.findOne({ _id: relationship.data.husband }),
+              Member.findOne({ _id: relationship.data.wife }),
+              Member.find({
+                _id: { $in: relationship.data.children },
+              }),
+            ]);
+            res.json({
+              success: true,
+              relationship: {
+                type: "couples",
+                _id: relationship._id,
+                data: {
+                  husband: husband_data,
+                  wife: wife_data,
+                  children: children_data,
+                },
+              },
+            });
+          } else throw new Error("Member Relationship Not Found");
+        } else {
+          res.json({
+            success: true,
+            relationship: {
+              type: "empty",
+              _id: "",
+              data: {
+                husband: "",
+                wife: "",
+                children: "",
+              },
+            },
+          });
+        }
+      } else throw new Error("Member  Not Found");
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Internal Server Error",
+      });
     }
   }
-  
-  app.post(`/api/orders`, async (req, res) => {
-  try {
-      // use the cart information passed from the front-end to calculate the order amount detals
-      const { cart } = req.body;
-      const { jsonResponse, httpStatusCode } = await createOrder(cart);
-      res.status(httpStatusCode).json(jsonResponse);
-      console.log("create order")
-    } catch (error) {
-      console.error("Failed to create order:", error);
-      res.status(500).json({ error: "Failed to create order." });
-    }
-  });
-  
-  app.post(`/api/orders/:orderID/capture`, async (req, res) => {
-    try {
-      const { orderID } = req.params;
-        console.log(orderID);  
-      const { jsonResponse, httpStatusCode } = await captureOrder(orderID);
-      res.status(httpStatusCode).json(jsonResponse);
-    } catch (error) {
-      console.error("Failed to create order:", error);
-      res.status(500).json({ error: "Failed to capture order." });
-    }
-  });
-  
-  // serve index.html
-  app.get("/", (req, res) => {
-    res.sendFile(path.resolve("./client/checkout.html"));
-  });
-  
+);
 
+app.post(
+  "/api/parents_relationship/get",
+  fetchUser,
+  fetchViewMember,
+  async (req, res) => {
+    try {
+      const member = await Member.findOne({ _id: req.body.member_id });
+
+      if (!member) {
+        throw new Error("Relationship Not Found");
+      }
+
+      if (member.parents_relationship) {
+        const relationship = await Relationship.findOne({
+          _id: member.parents_relationship,
+        });
+
+        if (relationship) {
+          const husband = await Member.findOne({
+            _id: relationship.data.husband,
+          });
+          const wife = await Member.findOne({
+            _id: relationship.data.wife,
+          });
+          return res.json({
+            success: true,
+            relationship: {
+              type: "couples",
+              _id: relationship._id,
+              data: {
+                husband,
+                wife,
+              },
+            },
+          });
+        }
+      }
+
+      return res.json({
+        success: true,
+        relationship: {
+          type: "empty",
+          _id: "",
+          data: {
+            husband: "",
+            wife: "",
+          },
+        },
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+);
+app.post(
+  "/api/relationship/addcouples",
+  fetchUser,
+  fetchViewMember,
+  async (req, res) => {
+    try {
+      const member = await Member.findOne({ _id: req.body.member_id });
+      const partner = await Member.findOne({ _id: req.body.partner_id });
+
+      if (member.married == true || partner.married == true)
+        throw new Error("At least one person is not single!.");
+
+      if (
+        member.couples_relationship != "" ||
+        partner.couples_relationship != ""
+      )
+        throw new Error("At least one person is not single!.");
+
+      if (member.gender === partner.gender)
+        throw new Error("Two people must have different genders!");
+
+      const children = await Member.find({
+        _id: { $in: req.body.children },
+        being_child: false,
+      });
+
+      const childrenIds = children.map((child) => child._id);
+
+      const new_couples_relationship = new Relationship({
+        tree_id: member.tree_id,
+        type: "couples",
+        data: {
+          husband: member.gender === "male" ? member._id : partner._id,
+          wife: member.gender === "female" ? member._id : partner._id,
+          children: childrenIds,
+        },
+      });
+      await new_couples_relationship.save();
+
+      member.married = true;
+      member.couples_relationship = new_couples_relationship._id;
+      partner.married = true;
+      partner.couples_relationship = new_couples_relationship._id;
+
+      await member.save();
+      await partner.save();
+
+      if (childrenIds.length) {
+        await Member.updateMany(
+          { _id: { $in: childrenIds } },
+          {
+            $set: {
+              being_child: true,
+              parents_relationship: new_couples_relationship._id,
+            },
+          }
+        );
+      }
+      res.json({
+        success: true,
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+);
+
+app.post(
+  "/api/relationship/addparents",
+  fetchUser,
+  fetchViewMember,
+  async (req, res) => {
+    try {
+      const relationship = await Relationship.findOne({
+        _id: req.body.relationship_id,
+      });
+
+      const member = await Member.findOne({ _id: req.body.member_id });
+
+      if (relationship && member) {
+        member.parents_relationship = relationship._id;
+        member.being_child = true;
+        relationship.data.children = [
+          ...(relationship.data.children || []),
+          member._id,
+        ];
+
+        await Promise.all([member.save(), relationship.save()]);
+      } else throw new Error("Member or Relationship not found!");
+
+      res.json({
+        success: true,
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+);
+
+app.post(
+  "/api/relationship/deletecouples",
+  fetchUser,
+  fetchViewMember,
+  async (req, res) => {
+    try {
+      const member = await Member.findOne({ _id: req.body.member_id });
+      if (member) {
+        if (member.couples_relationship) {
+          const relationship = await Relationship.findOne({
+            _id: member.couples_relationship,
+          });
+
+          if (relationship) {
+            const husband = await Member.findOne({
+              _id: relationship.data.husband,
+            });
+            const wife = await Member.findOne({ _id: relationship.data.wife });
+
+            husband.married = false;
+            husband.couples_relationship = "";
+
+            wife.married = false;
+            wife.couples_relationship = "";
+
+            await Promise.all([wife.save(), husband.save()]);
+
+            if (relationship.data.children.length > 0) {
+              await Member.updateMany(
+                { _id: { $in: relationship.data.children } },
+                {
+                  $set: {
+                    being_child: false,
+                    parents_relationship: "",
+                  },
+                }
+              );
+            }
+
+            await Relationship.deleteOne({ _id: relationship._id });
+
+            res.json({
+              success: true,
+            });
+          } else throw new Error("Relationship not Found");
+        } else
+          res.json({
+            success: true,
+          });
+      } else throw new Error("Member not Found");
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+);
+
+app.post(
+  "/api/relationship/deleteparents",
+  fetchUser,
+  fetchViewMember,
+  async (req, res) => {
+    try {
+      const member = await Member.findOne({ _id: req.body.member_id });
+      if (member) {
+        if (member.parents_relationship && member.being_child) {
+          const relationship = await Relationship.findOne({
+            _id: member.parents_relationship,
+          });
+
+          if (relationship) {
+            await Relationship.updateOne(
+              { _id: member.parents_relationship },
+              { $pull: { "data.children": member._id } }
+            );
+
+            member.being_child = false;
+            member.parents_relationship = "";
+
+            await member.save();
+
+            res.json({
+              success: true,
+            });
+          } else throw new Error("Relationship not Found");
+        } else
+          res.json({
+            success: true,
+          });
+      } else throw new Error("Member not Found");
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+);
 
 // Listening to the server
 server.listen(port, (err) => {
-    if (err) {
-        console.log("Error in connecting to the server");
-    } else {
-        console.log("Server is running on port: " + port);
-    }
+  if (err) {
+    console.log("Error in connecting to the server");
+  } else {
+    console.log("Server is running on port: " + port);
+  }
 });
-
-
-
-
