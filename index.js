@@ -26,6 +26,7 @@ const User = require("./models/User");
 const TreeInfo = require("./models/TreeInfo");
 const Member = require("./models/Member");
 const Relationship = require("./models/Relationship");
+const { permission } = require("process");
 
 var secretKey = "family_tree";
 
@@ -199,6 +200,41 @@ const fetchViewTreeId = async (req, res, next) => {
     }
 };
 
+const fetchOwnerEditPermissionTreeId = async (req, res, next) => {
+  const tree_id = req.body.tree_id;
+  if (!tree_id) {
+    res.send({
+      success: false,
+      message: "Please send a valid Tree Id",
+    });
+  } else
+    try {
+      let tree = await TreeInfo.findOne({ _id: tree_id });
+
+      if (!tree) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Tree not found" });
+      }
+
+      const userRole = tree.role?.[req.user.email];
+
+      if (userRole === "owner") {
+        return next();
+      }
+
+      res.status(403).json({
+        success: false,
+        message: "You do not have permission to edit permission of this tree",
+      });
+    } catch (error) {
+      res.send({
+        success: false,
+        message: "Please send a valid Tree Id",
+      });
+    }
+};
+
 const fetchViewMember = async (req, res, next) => {
   const member_id = req.body.member_id;
   if (!member_id) {
@@ -237,6 +273,49 @@ const fetchViewMember = async (req, res, next) => {
       res.status(403).json({
         success: false,
         message: "You do not have permission to view this member",
+      });
+    } catch (error) {
+      res.send({
+        success: false,
+        message: "Please send a valid Member Id",
+      });
+    }
+};
+
+const fetchEditMember = async (req, res, next) => {
+  const member_id = req.body.member_id;
+  if (!member_id) {
+    res.send({
+      success: false,
+      message: "Please send a valid Member Id 123",
+    });
+  } else
+    try {
+      let member = await Member.findOne({ _id: member_id });
+      if (!member) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Member not found" });
+      }
+
+      const tree_id = member.tree_id;
+      let tree = await TreeInfo.findOne({ _id: tree_id });
+
+      if (!tree) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Tree of Member Info Error" });
+      }
+
+      const userRole = tree.role?.[req.user.email];
+
+      if (userRole === "owner" || userRole === "editor") {
+        return next();
+      }
+
+      res.status(403).json({
+        success: false,
+        message: "You do not have permission to edit this member",
       });
     } catch (error) {
       res.send({
@@ -460,15 +539,142 @@ app.post("/api/treeinfo/find", fetchUser, async (req, res) => {
   }
 });
 
+app.post("/api/treeinfo/asktoview", fetchUser, async (req, res) => {
+  try {
+    const treeInfo = await TreeInfo.findOne({ _id: req.body.tree_id });
+    if (!treeInfo) {
+      return res
+        .status(404)
+        .json({ success: 0, message: "TreeInfo not found" });
+    }
+
+    if (!treeInfo.role[req.user.email]) {
+      treeInfo.role[req.user.email] = "pending";
+      treeInfo.markModified("role");
+      await treeInfo.save();
+    }
+
+    res.json({ success: 1 });
+  } catch (error) {
+    console.error("Error updating TreeInfo:", error);
+    res.status(500).json({ success: 0, message: error });
+  }
+});
+
+app.post(
+  "/api/treeinfo/updatepermission",
+  fetchUser,
+  fetchOwnerEditPermissionTreeId,
+  async (req, res) => {
+    try {
+      const treeInfo = await TreeInfo.findOne({ _id: req.body.tree_id });
+      if (!treeInfo) {
+        return res
+          .status(404)
+          .json({ success: 0, message: "TreeInfo not found" });
+      }
+
+      if (req.body.new_permission == "owner") {
+        if (treeInfo.role[req.body.user_email]) {
+          treeInfo.role[req.body.user_email] = req.body.new_permission;
+        } else throw new Error("User Email not found in Roles List!");
+
+        if (treeInfo.role[req.user.email]) {
+          treeInfo.role[req.user.email] = "editor";
+          treeInfo.markModified("role");
+          await treeInfo.save();
+        } else throw new Error("User Email not found in Roles List!");
+      } else {
+        if (treeInfo.role[req.body.user_email]) {
+          treeInfo.role[req.body.user_email] = req.body.new_permission;
+          treeInfo.markModified("role");
+          await treeInfo.save();
+        } else throw new Error("User Email not found in Roles List!");
+      }
+
+      res.json({ success: 1 });
+    } catch (error) {
+      console.error("Error updating TreeInfo:", error);
+      res.status(500).json({ success: 0, message: error });
+    }
+  }
+);
+
+app.post(
+  "/api/treeinfo/deletepermission",
+  fetchUser,
+  fetchOwnerEditPermissionTreeId,
+  async (req, res) => {
+    try {
+      const treeInfo = await TreeInfo.findOne({ _id: req.body.tree_id });
+      if (!treeInfo) {
+        return res
+          .status(404)
+          .json({ success: 0, message: "TreeInfo not found" });
+      }
+
+      if (treeInfo.role[req.body.user_email] == "owner") {
+        throw new Error("Cannot delete Role Owner!");
+      } else {
+        if (treeInfo.role[req.body.user_email]) {
+          delete treeInfo.role[req.body.user_email];
+          treeInfo.markModified("role");
+          await treeInfo.save();
+        } else throw new Error("User Email not found in Roles List!");
+      }
+
+      res.json({ success: 1 });
+    } catch (error) {
+      console.error("Error Deleting Role TreeInfo:", error);
+      res.status(500).json({ success: 0, message: error });
+    }
+  }
+);
+
+app.post(
+  "/api/treeinfo/getpermissions",
+  fetchUser,
+  fetchOwnerEditPermissionTreeId,
+  async (req, res) => {
+    try {
+      const treeInfo = await TreeInfo.findOne({ _id: req.body.tree_id });
+      if (!treeInfo) {
+        return res
+          .status(404)
+          .json({ success: 0, message: "TreeInfo not found" });
+      }
+
+      const emails = Object.keys(treeInfo.role);
+      const users = await User.find({ email: { $in: emails } });
+
+      const permissions = users.map((user) => ({
+        email: user.email,
+        username: user.username,
+        role: treeInfo.role[user.email],
+      }));
+
+      res.json({ success: 1, permissions });
+    } catch (error) {
+      console.error("Error fetching TreeInfo permissions:", error);
+      res.status(500).json({ success: 0, message: error.message });
+    }
+  }
+);
+
+
 app.post("/api/family/get", fetchUser, fetchViewTreeId, async (req, res) => {
   try {
     const family = await Member.find({ tree_id: req.body.tree_id });
-    // const tree = await TreeInfo.findOne({ _id: req.body.tree_id });
+    const tree = await TreeInfo.findOne({ _id: req.body.tree_id });
 
+    const permission = tree.role[req.user.email];
+    const family_name = tree.name;
 
     res.json({
       success: true,
       family,
+      permission,
+      family_name,
     });
   } catch (error) {
     res.status(500).json({
@@ -703,7 +909,7 @@ app.post(
 app.post(
   "/api/relationship/addcouples",
   fetchUser,
-  fetchViewMember,
+  fetchEditMember,
   async (req, res) => {
     try {
       const member = await Member.findOne({ _id: req.body.member_id });
@@ -773,7 +979,7 @@ app.post(
 app.post(
   "/api/relationship/addparents",
   fetchUser,
-  fetchViewMember,
+  fetchEditMember,
   async (req, res) => {
     try {
       const relationship = await Relationship.findOne({
@@ -808,7 +1014,7 @@ app.post(
 app.post(
   "/api/relationship/deletecouples",
   fetchUser,
-  fetchViewMember,
+  fetchEditMember,
   async (req, res) => {
     try {
       const member = await Member.findOne({ _id: req.body.member_id });
@@ -867,7 +1073,7 @@ app.post(
 app.post(
   "/api/relationship/deleteparents",
   fetchUser,
-  fetchViewMember,
+  fetchEditMember,
   async (req, res) => {
     try {
       const member = await Member.findOne({ _id: req.body.member_id });
