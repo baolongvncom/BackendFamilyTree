@@ -510,6 +510,44 @@ app.post("/api/treeinfo/add", fetchUser, async (req, res) => {
   });
 });
 
+app.post(
+  "/api/treeinfo/delete",
+  fetchUser,
+  fetchOwnerEditPermissionTreeId,
+  async (req, res) => {
+    try {
+      const { tree_id } = req.body;
+
+      if (!tree_id) {
+        return res
+          .status(400)
+          .json({ success: 0, message: "Tree ID is required" });
+      }
+
+      const treeInfo = await TreeInfo.findOne({ _id: tree_id });
+      if (!treeInfo) {
+        return res
+          .status(404)
+          .json({ success: 0, message: "TreeInfo not found" });
+      }
+
+      await Member.deleteMany({ tree_id: tree_id });
+      await Relationship.deleteMany({ tree_id: tree_id });
+      await TreeInfo.deleteOne({ _id: tree_id });
+
+      res
+        .status(200)
+        .json({
+          success: 1,
+          message: "TreeInfo and related data deleted successfully",
+        });
+    } catch (error) {
+      console.error("Error deleting TreeInfo:", error);
+      res.status(500).json({ success: 0, message: error });
+    }
+  }
+);
+
 app.get("/api/treeinfo/get", fetchUser, async (req, res) => {
   try {
     const treeInfos = await TreeInfo.find();
@@ -661,7 +699,6 @@ app.post(
   }
 );
 
-
 app.post("/api/family/get", fetchUser, fetchViewTreeId, async (req, res) => {
   try {
     const family = await Member.find({ tree_id: req.body.tree_id });
@@ -669,12 +706,14 @@ app.post("/api/family/get", fetchUser, fetchViewTreeId, async (req, res) => {
 
     const permission = tree.role[req.user.email];
     const family_name = tree.name;
+    const code = tree.code;
 
     res.json({
       success: true,
       family,
       permission,
       family_name,
+      code,
     });
   } catch (error) {
     res.status(500).json({
@@ -689,7 +728,7 @@ app.post("/api/family/add", fetchUser, fetchEditTreeId, async (req, res) => {
     const member = new Member({
       tree_id: req.body.tree_id,
       full_name: req.body.full_name,
-      date_of_birth: req.body.date_of_birth,
+      date_of_birth: new Date(req.body.date_of_birth),
       place_of_birth: req.body.place_of_birth,
       gender: req.body.gender,
       job: req.body.job,
@@ -713,14 +752,75 @@ app.post("/api/family/add", fetchUser, fetchEditTreeId, async (req, res) => {
 app.post("/api/member/get", fetchUser, fetchViewMember, async (req, res) => {
   try {
     const member = await Member.findOne({ _id: req.body.member_id });
+    const tree = await TreeInfo.findOne({ _id: member.tree_id });
+
+    const permission = tree.role[req.user.email];
+
     res.json({
       success: true,
       member,
+      permission,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: "Internal Server Error",
+      message: error,
+    });
+  }
+});
+
+app.post("/api/member/delete", fetchUser, fetchEditMember, async (req, res) => {
+  try {
+    const member = await Member.findOne({ _id: req.body.member_id });
+    if (!member) {
+      throw new Error("Member not found!");
+    }
+
+    // Xóa quan hệ chính của member
+    await Relationship.deleteOne({ _id: member.relationship_id });
+
+    // Xóa member khỏi danh sách con trong các quan hệ cha mẹ
+    await Relationship.updateMany(
+      {},
+      { $pull: { "data.children": member._id } }
+    );
+
+    await Member.deleteOne({_id: member._id});
+
+    res.json({
+      success: true,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
+
+
+app.post("/api/member/update", fetchUser, fetchEditMember, async (req, res) => {
+  try {
+    const member = await Member.findOne({ _id: req.body.member_id });
+
+    member.full_name = req.body.member.full_name;
+    member.job = req.body.member.job;
+    member.gender = req.body.member.gender;
+    member.address = req.body.member.address;
+    member.place_of_birth = req.body.member.place_of_birth;
+    member.date_of_birth = new Date(req.body.member.date_of_birth);
+    member.description = req.body.member.description;
+    member.image = req.body.member.image;
+
+    await member.save();
+
+    res.json({
+      success: true,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error,
     });
   }
 });

@@ -45,8 +45,11 @@ const MemberSchema = mongoose.Schema(
       default: Date.now,
     },
     date_of_birth: {
-      type: Date,
+      type: String,
       default: Date.now,
+      set: (val) => {
+        return new Date(val).toISOString().split("T")[0];
+      },
     },
     place_of_birth: {
       type: String,
