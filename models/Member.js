@@ -17,11 +17,7 @@ const MemberSchema = mongoose.Schema(
     },
     death_id: {
       type: String,
-      default: "false",
-    },
-    achivements: {
-      type: Array,
-      default: [],
+      default: "",
     },
     gender: {
       type: String,
@@ -52,12 +48,12 @@ const MemberSchema = mongoose.Schema(
       },
     },
     place_of_birth: {
-      type: String,
-      default: "",
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "hometown",
     },
     job: {
-      type: String,
-      default: "",
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "job",
     },
     address: {
       type: String,
