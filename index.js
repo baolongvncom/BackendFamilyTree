@@ -72,7 +72,7 @@ const upload = multer({
 });
 
 // Creating Upload Endpoint for images
-// app.use("/images", express.static("upload/images"));
+app.use("/images", express.static("upload/images"));
 
 const fetchAdmin = async (req, res, next) => {
   const token = req.header("auth-token");
@@ -146,7 +146,7 @@ const fetchEditTreeId = async (req, res, next) => {
         message: "You do not have permission to edit this tree",
       });
     } catch (error) {
-      res.send({
+      res.status(500).send({
         success: false,
         message: "Please send a valid Tree Id",
       });
@@ -369,11 +369,41 @@ app.post("/api/signup", async (req, res) => {
   });
 });
 
+app.post("/api/change-password", async (req, res) => {
+  let user = await User.findOne({ email: req.body.email });
+  if (user) {
+    // Dùng bcrypt để so sánh password
+    const passCompare = await bcrypt.compare(
+      req.body.old_password,
+      user.password
+    );
+    if (passCompare) {
+      const salt = await bcrypt.genSalt(10);
+      const newHashedPassword = await bcrypt.hash(req.body.new_password, salt);
+      user.password = newHashedPassword;
+      await user.save();
+      res.json({
+        success: true,
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: "Invalid Old Password",
+      });
+    }
+  } else {
+    res.status(500).json({
+      success: false,
+      message: "User not found",
+    });
+  }
+});
+
 // Admin signup
 app.get("/api/adminsignup", async (req, res) => {
   let check = await User.findOne({ email: "admin" });
   if (check) {
-    res.json({ success: false, message: "Admin already exists" });
+    res.status(500).json({ success: false, message: "Admin already exists" });
     return;
   }
 
@@ -437,13 +467,13 @@ app.post("/api/signin", async (req, res) => {
             admin: false,
           });
     } else {
-      res.json({
+      res.status(500).json({
         success: false,
         message: "Invalid Password",
       });
     }
   } else {
-    res.json({
+    res.status(500).json({
       success: false,
       message: "User not found",
     });
@@ -463,23 +493,26 @@ app.get("/api/isuser", fetchUser, async (req, res) => {
 });
 
 app.post("/api/upload", upload.single("treeInfo"), (req, res) => {
-  imgur
-    .uploadFile(`./upload/images/${req.file.filename}`)
-    .then((json) => {
-      console.log(JSON.stringify(json, null, 2));
-      console.log("imgur link: ", json.link);
-      res.json({
-        success: 1,
-        image_url: json.link,
-      });
-    })
-    .catch((err) => {
-      console.error(err.message);
-      res.json({
+  try {
+    if (!req.file) {
+      return res.status(400).json({
         success: 0,
-        message: err.message,
+        message: "No file uploaded",
       });
+    }
+
+    const imageUrl = `${req.protocol}://${req.get("host")}/images/${req.file.filename}`;
+
+    res.json({
+      success: 1,
+      image_url: imageUrl,
     });
+  } catch (err) {
+    res.status(500).json({
+      success: 0,
+      message: err.message,
+    });
+  }
 });
 
 // Add TreeInfo API
@@ -512,7 +545,7 @@ app.get("/api/treeinfo/getJobAndHometown", fetchUser, async (req, res) => {
       hometowns,
     });
   } catch (err) {
-    res.json({
+    res.status(500).json({
       success: false,
       message: err.message,
     });
@@ -938,6 +971,7 @@ app.post("/api/member/update", fetchUser, fetchEditMember, async (req, res) => {
     if (!hometown) throw new Error("Hometown not Found");
     if (member.married && member.gender != req.body.member.gender)
       throw new Error("Cannot change gender while being married!");
+    else member.gender = req.body.member.gender;
 
     member.full_name = req.body.member.full_name;
     member.job = req.body.member.job;
