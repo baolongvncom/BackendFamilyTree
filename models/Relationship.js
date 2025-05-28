@@ -5,7 +5,7 @@ const RelationshipSchema = new mongoose.Schema(
     tree_id: {
       type: mongoose.Schema.Types.ObjectId,
       required: true,
-      ref: "TreeInfo",
+      ref: "treeInfo",
     },
     type: {
       type: String,
@@ -15,18 +15,22 @@ const RelationshipSchema = new mongoose.Schema(
     data: {
       husband: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "Member",
+        ref: "member",
         required: true,
       },
       wife: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "Member",
+        ref: "member",
         required: true,
+      },
+      date_of_marriage: {
+        type: String,
+        default: null,
       },
       children: [
         {
           type: mongoose.Schema.Types.ObjectId,
-          ref: "Member",
+          ref: "member",
         },
       ],
     },
