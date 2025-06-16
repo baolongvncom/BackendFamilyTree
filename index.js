@@ -501,7 +501,9 @@ app.post("/api/upload", upload.single("treeInfo"), (req, res) => {
       });
     }
 
-    const imageUrl = `${req.protocol}://${req.get("host")}/images/${req.file.filename}`;
+    const imageUrl = `${req.protocol}://${req.get("host")}/images/${
+      req.file.filename
+    }`;
 
     res.json({
       success: 1,
@@ -979,7 +981,9 @@ app.post("/api/member/update", fetchUser, fetchEditMember, async (req, res) => {
     member.place_of_birth = req.body.member.place_of_birth;
     member.date_of_birth = new Date(req.body.member.date_of_birth);
     member.description = req.body.member.description;
-    member.image = req.body.member.image;
+    if (req.body.member.image) {
+      member.image = req.body.member.image;
+    }
 
     await member.save();
 
@@ -994,9 +998,12 @@ app.post("/api/member/update", fetchUser, fetchEditMember, async (req, res) => {
   }
 });
 
-app.get("/api/member/getunmarried", fetchUser, async (req, res) => {
+app.post("/api/member/getunmarried", fetchUser, async (req, res) => {
   try {
-    const members = await Member.find({ married: false });
+    const members = await Member.find({
+      married: false,
+      tree_id: req.body.tree_id,
+    });
     res.json({
       success: true,
       members,
@@ -1009,9 +1016,11 @@ app.get("/api/member/getunmarried", fetchUser, async (req, res) => {
   }
 });
 
-app.get("/api/member/getcouples", fetchUser, async (req, res) => {
+app.post("/api/member/getcouples", fetchUser, async (req, res) => {
   try {
-    const relationships = await Relationship.find();
+    const relationships = await Relationship.find({
+      tree_id: req.body.tree_id,
+    });
 
     const new_relationships = await Promise.all(
       relationships.map(async (relationship) => {
@@ -1053,7 +1062,10 @@ app.post(
   fetchEditTreeId,
   async (req, res) => {
     try {
-      let members = await Member.find({ being_child: false });
+      let members = await Member.find({
+        being_child: false,
+        tree_id: req.body.tree_id,
+      });
       const member = await Member.findById(req.body.member_id);
       if (!member) throw new Error("Member not Found");
 
