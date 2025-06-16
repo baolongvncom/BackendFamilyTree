@@ -459,11 +459,13 @@ app.post("/api/signin", async (req, res) => {
         ? res.json({
             success: true,
             token: token,
+            username: user.username,
             admin: true,
           })
         : res.json({
             success: true,
             token: token,
+            username: user.username,
             admin: false,
           });
     } else {
@@ -485,11 +487,37 @@ app.get("/api/isadmin", fetchAdmin, async (req, res) => {
 });
 
 app.get("/api/isuser", fetchUser, async (req, res) => {
+  const user = await User.findById(req.user._id);
+  if (!user)
+    res.status(500).json({
+      success: 0,
+      message: "Invalid User!",
+    });
   res.json({
     success: true,
-    email: req.user.email,
-    username: req.user.username,
+    email: user.email,
+    username: user.username,
   });
+});
+
+app.post("/api/updateusername", fetchUser, async (req, res) => {
+  try {
+    if (!req.body.username) throw new Error("New Username is Invalid!");
+    const user = await User.findOne({ email: req.user.email });
+    if (!user) throw new Error("User not found!");
+    user.username = req.body.username;
+    await user.save();
+    res.json({
+      success: true,
+      email: user.email,
+      username: user.username,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: 0,
+      message: err.message,
+    });
+  }
 });
 
 app.post("/api/upload", upload.single("treeInfo"), (req, res) => {
@@ -827,6 +855,8 @@ app.post("/api/family/get", fetchUser, fetchViewTreeId, async (req, res) => {
 
     const family_name = tree.name;
     const code = tree.code;
+    const description = tree.description;
+    const image = tree.image;
 
     res.json({
       success: true,
@@ -834,6 +864,32 @@ app.post("/api/family/get", fetchUser, fetchViewTreeId, async (req, res) => {
       permission: permission.name,
       family_name,
       code,
+      description,
+      image,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: `Internal Server Error ${error}`,
+    });
+  }
+});
+
+app.post("/api/family/update", fetchUser, fetchEditTreeId, async (req, res) => {
+  try {
+    const treeInfo = await TreeInfo.findById(req.body.tree_id);
+    if (!treeInfo) throw new Error("Tree not Found!");
+    if (!req.body.treeInfo.name)
+      throw new Error("Tree Name must not be Null or Undefined!");
+    treeInfo.image = req.body.treeInfo.image;
+    treeInfo.name = req.body.treeInfo.name;
+    treeInfo.description = req.body.treeInfo.description;
+    await treeInfo.save();
+    res.json({
+      success: true,
+      family_name: treeInfo.name,
+      description: treeInfo.description,
+      image: treeInfo.image,
     });
   } catch (error) {
     res.status(500).json({
