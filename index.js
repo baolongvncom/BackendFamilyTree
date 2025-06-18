@@ -44,13 +44,14 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_SECRET_KEY,
 });
 
-app.use(express.json());
 app.use(
   cors({
     origin: process.env.FAMILYTREE_URL, 
     credentials: true,
   })
 );
+app.use(express.json());
+
 
 // UID Generation
 function generateID() {
