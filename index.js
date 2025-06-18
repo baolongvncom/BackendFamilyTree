@@ -32,11 +32,17 @@ const Job = require("./models/Job");
 const Hometown = require("./models/Hometown");
 const Permission = require("./models/Permission");
 const { count } = require("console");
-
-const secretKey = "family_tree";
-
 require("dotenv/config");
-// const { PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, PAYPAL_API } = process.env;
+
+const secretKey = process.env.SECRET_KEY;
+
+const cloudinary = require("cloudinary").v2;
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_SECRET_KEY,
+});
 
 app.use(express.json());
 app.use(cors());
@@ -47,9 +53,10 @@ function generateID() {
 }
 
 // Database connection with MongoDB
-// MongoDB_URI = "mongodb+srv://baolongvncom:baolong123456@cluster0.0vgsjr7.mongodb.net/FamilyTree";
-MongoDB_URI = "mongodb://localhost:27017/FamilyTree";
-mongoose.connect(MongoDB_URI);
+
+// MongoDB_URL = "mongodb://localhost:27017/FamilyTree";
+MongoDB_URL = process.env.MongoDB_URL;
+mongoose.connect(MongoDB_URL);
 
 // API Creation
 app.get("/", (req, res) => {
@@ -520,29 +527,47 @@ app.post("/api/updateusername", fetchUser, async (req, res) => {
   }
 });
 
+// app.post("/api/upload", upload.single("treeInfo"), (req, res) => {
+//   try {
+//     if (!req.file) {
+//       return res.status(400).json({
+//         success: 0,
+//         message: "No file uploaded",
+//       });
+//     }
+
+//     const imageUrl = `${req.protocol}://${req.get("host")}/images/${
+//       req.file.filename
+//     }`;
+
+//     res.json({
+//       success: 1,
+//       image_url: imageUrl,
+//     });
+//   } catch (err) {
+//     res.status(500).json({
+//       success: 0,
+//       message: err.message,
+//     });
+//   }
+// });
+
 app.post("/api/upload", upload.single("treeInfo"), (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({
-        success: 0,
-        message: "No file uploaded",
+  cloudinary.uploader
+    .upload(`./upload/images/${req.file.filename}`)
+    .then((json) => {
+      res.json({
+        success: 1,
+        image_url: json.secure_url,
       });
-    }
-
-    const imageUrl = `${req.protocol}://${req.get("host")}/images/${
-      req.file.filename
-    }`;
-
-    res.json({
-      success: 1,
-      image_url: imageUrl,
+    })
+    .catch((err) => {
+      console.error(err.message);
+      res.json({
+        success: 0,
+        message: err.message,
+      });
     });
-  } catch (err) {
-    res.status(500).json({
-      success: 0,
-      message: err.message,
-    });
-  }
 });
 
 // Add TreeInfo API
