@@ -45,7 +45,12 @@ cloudinary.config({
 });
 
 app.use(express.json());
-app.use(cors());
+app.use(
+  cors({
+    origin: process.env.FAMILYTREE_URL, 
+    credentials: true,
+  })
+);
 
 // UID Generation
 function generateID() {
