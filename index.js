@@ -184,20 +184,20 @@ mongoose
   .connect(MongoDB_URL)
   .then(async () => {
     console.log("✅ MongoDB connected");
-    const trees = await TreeInfo.find({}, "_id");
-    console.log(`🔍 Found ${trees.length} trees.`);
+    // const trees = await TreeInfo.find({}, "_id");
+    // console.log(`🔍 Found ${trees.length} trees.`);
 
-    // Call initDefaultData for each tree_id
-    for (const tree of trees) {
-      try {
-        console.log(`🔧 Initializing defaults for each tree_id: ${tree._id}`);
-        await initDefaultData(tree._id);
-      } catch (err) {
-        console.error(`❌ Failed to initialize tree ${tree._id}:`, err.message);
-      }
-    }
+    // // Call initDefaultData for each tree_id
+    // for (const tree of trees) {
+    //   try {
+    //     console.log(`🔧 Initializing defaults for each tree_id: ${tree._id}`);
+    //     await initDefaultData(tree._id);
+    //   } catch (err) {
+    //     console.error(`❌ Failed to initialize tree ${tree._id}:`, err.message);
+    //   }
+    // }
 
-    console.log("🎉 All trees initialized with default data.");
+    // console.log("🎉 All trees initialized with default data.");
   })
   .catch((err) => {
     console.error("MongoDB connection failed:", err.message);
