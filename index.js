@@ -34,6 +34,12 @@ const Permission = require("./models/Permission");
 const { count } = require("console");
 require("dotenv/config");
 
+const DEFAULT_JOB_NAME = "Unknown";
+const DEFAULT_HOMETOWN_NAME = "Unknown";
+const DEFAULT_GRAVESITE_NAME = "Unknown";
+const DEFAULT_DEATHCAUSE_NAME = "Unknown";
+const DEFAULT_ACHIEVEMENTTYPE_NAME = "Unknown";
+
 const secretKey = process.env.SECRET_KEY;
 
 const cloudinary = require("cloudinary").v2;
@@ -46,12 +52,11 @@ cloudinary.config({
 
 app.use(
   cors({
-    origin: process.env.FAMILYTREE_URL, 
+    origin: process.env.FAMILYTREE_URL,
     credentials: true,
   })
 );
 app.use(express.json());
-
 
 // UID Generation
 function generateID() {
@@ -60,9 +65,129 @@ function generateID() {
 
 // Database connection with MongoDB
 
+async function initDefaultData(tree_id) {
+  // 1. Permission
+  const defaultPermissions = [
+    { name: "owner", description: "Toàn quyền quản lý cây" },
+    { name: "editor", description: "Quản lý nội dung và thành viên" },
+    { name: "viewer", description: "Chỉ xem" },
+    { name: "pending", description: "Chờ duyệt" },
+  ];
+  for (const perm of defaultPermissions) {
+    const exists = await Permission.findOne({ name: perm.name });
+    if (!exists) {
+      await Permission.create(perm);
+    }
+  }
+
+  // 2. Hometown
+  const defaultHometowns = [
+    DEFAULT_HOMETOWN_NAME,
+    "Bình Định",
+    "Hà Nội",
+    "Sài Gòn",
+  ];
+  for (const name of defaultHometowns) {
+    const exists = await Hometown.findOne({ name, tree_id });
+    if (!exists) {
+      await Hometown.create({ name, tree_id });
+    }
+  }
+  console.log("Hometown initialization complete.");
+
+  // 3. GraveSite
+  const defaultGraveSites = [
+    DEFAULT_GRAVESITE_NAME,
+    "Bình Định",
+    "Sài Gòn",
+    "Hà Nội",
+  ];
+  for (const name of defaultGraveSites) {
+    const exists = await GraveSite.findOne({ name, tree_id });
+    if (!exists) {
+      await GraveSite.create({ name, tree_id });
+    }
+  }
+  console.log("GraveSite initialization complete.");
+
+  // 4. DeathCause
+  const defaultDeathCauses = [
+    DEFAULT_DEATHCAUSE_NAME,
+    "Tuổi già",
+    "Tai nạn giao thông",
+    "Tai nạn lao động",
+    "Tai nạn nghề nghiệp",
+    "Hi sinh",
+    "Đột quỵ",
+    "Tự tử",
+    "Di chứng bệnh",
+    "Viêm phổi",
+    "Bệnh gan",
+    "Bệnh tim",
+  ];
+  for (const name of defaultDeathCauses) {
+    const exists = await DeathCause.findOne({ name, tree_id });
+    if (!exists) {
+      await DeathCause.create({ name, tree_id });
+    }
+  }
+  console.log("DeathCause initialization complete.");
+
+  // 5. AchievementType
+  const defaultAchievementTypes = [
+    DEFAULT_ACHIEVEMENTTYPE_NAME,
+    "Lập gia đình",
+    "Tốt nghiệp đại học",
+    "Cứu người",
+    "Tham gia công việc tình nguyện",
+  ];
+  for (const name of defaultAchievementTypes) {
+    const exists = await AchievementType.findOne({ name, tree_id });
+    if (!exists) {
+      await AchievementType.create({ name, tree_id });
+    }
+  }
+  console.log("AchievementType initialization complete.");
+
+  // 6. Job
+  const defaultJobs = [
+    DEFAULT_JOB_NAME,
+    "Kỹ sư phần mềm",
+    "Bác sĩ thú y",
+    "Thợ mộc",
+    "Nhà thiết kế đồ họa",
+    "Nhân viên bán hàng",
+    "Sĩ quan quân đội",
+    "Bác sĩ",
+    "Thợ điện",
+    "Phi công",
+    "Lính cứu hỏa",
+    "Tài xế",
+    "Biên dịch viên",
+    "Lập trình viên",
+    "Nhiếp ảnh gia",
+  ];
+  for (const name of defaultJobs) {
+    const exists = await Job.findOne({ name, tree_id });
+    if (!exists) {
+      await Job.create({ name, tree_id });
+    }
+  }
+  console.log("Job initialization complete.");
+
+  console.log("All default data initialized.");
+}
+
 // MongoDB_URL = "mongodb://localhost:27017/FamilyTree";
 MongoDB_URL = process.env.MongoDB_URL;
-mongoose.connect(MongoDB_URL);
+mongoose
+  .connect(MongoDB_URL)
+  .then(async () => {
+    console.log("✅ MongoDB connected");
+  })
+  .catch((err) => {
+    console.error("MongoDB connection failed:", err.message);
+  });
 
 // API Creation
 app.get("/", (req, res) => {
@@ -130,7 +255,7 @@ const fetchUser = async (req, res, next) => {
 const fetchEditTreeId = async (req, res, next) => {
   const tree_id = req.body.tree_id;
   if (!tree_id) {
-    res.send({
+    res.status(404).json({
       success: false,
       message: "Please send a valid Tree Id",
     });
@@ -193,6 +318,7 @@ const fetchViewTreeId = async (req, res, next) => {
           userRole.name === "editor" ||
           userRole.name === "viewer"
         ) {
+          req.user.permission = userRole.name;
           return next();
         }
       }
@@ -596,10 +722,12 @@ async function generateUniqueCode() {
   return code;
 }
 
-app.get("/api/treeinfo/getJobAndHometown", fetchUser, async (req, res) => {
+app.post("/api/treeinfo/getJobAndHometown", fetchUser, async (req, res) => {
   try {
-    const jobs = await Job.find();
-    const hometowns = await Hometown.find();
+    const tree = await TreeInfo.findOne({ _id: req.body.tree_id });
+    if (!tree) throw new Error("Tree not Found!");
+    const jobs = await Job.find({ tree_id: tree._id });
+    const hometowns = await Hometown.find({ tree_id: tree._id });
     res.json({
       success: true,
       jobs,
@@ -615,7 +743,11 @@ app.get("/api/treeinfo/getJobAndHometown", fetchUser, async (req, res) => {
 
 app.post("/api/treeinfo/add", fetchUser, async (req, res) => {
   const new_code = await generateUniqueCode();
-  const owner_permission = await Permission.findOne({ name: "owner" });
+  let owner_permission = await Permission.findOne({ name: "owner" });
+  if (!owner_permission) {
+    owner_permission = await Permission.create({ name: "owner" });
+  }
+
   const role = {
     [req.user.email]: owner_permission._id,
   };
@@ -627,6 +759,7 @@ app.post("/api/treeinfo/add", fetchUser, async (req, res) => {
     role,
   });
   await treeInfo.save();
+  await initDefaultData(treeInfo._id);
   console.log("New Tree Saved", treeInfo);
   res.json({
     success: true,
@@ -906,6 +1039,25 @@ app.post("/api/family/get", fetchUser, fetchViewTreeId, async (req, res) => {
   }
 });
 
+app.post(
+  "/api/permission/get",
+  fetchUser,
+  fetchViewTreeId,
+  async (req, res) => {
+    try {
+      res.json({
+        success: true,
+        permission: req.user.permission,
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: `Internal Server Error ${error}`,
+      });
+    }
+  }
+);
+
 app.post("/api/family/update", fetchUser, fetchEditTreeId, async (req, res) => {
   try {
     const treeInfo = await TreeInfo.findById(req.body.tree_id);
@@ -932,6 +1084,8 @@ app.post("/api/family/update", fetchUser, fetchEditTreeId, async (req, res) => {
 
 app.post("/api/family/add", fetchUser, fetchEditTreeId, async (req, res) => {
   try {
+    const tree = await TreeInfo.findById(req.body.tree_id);
+    if (!tree) throw new Error("Tree not Found!");
     const hometown = await Hometown.findById(req.body.place_of_birth);
     if (!hometown) throw new Error("Hometown not Found");
     const job = await Job.findById(req.body.job);
@@ -964,14 +1118,15 @@ app.post("/api/family/add", fetchUser, fetchEditTreeId, async (req, res) => {
 app.post("/api/member/get", fetchUser, fetchViewMember, async (req, res) => {
   try {
     const member = await Member.findOne({ _id: req.body.member_id });
+    if (!member) throw new Error("Member not Found!");
     const tree = await TreeInfo.findOne({ _id: member.tree_id });
-
+    if (!tree) throw new Error("Tree not Found!");
     const permissionId = tree.role[req.user.email];
 
     const permission = await Permission.findById(permissionId);
 
-    const jobs = await Job.find();
-    const hometowns = await Hometown.find();
+    const jobs = await Job.find({ tree_id: tree._id });
+    const hometowns = await Hometown.find({ tree_id: tree._id });
 
     res.json({
       success: true,
@@ -1518,7 +1673,11 @@ app.post(
   fetchViewMember,
   async (req, res) => {
     try {
-      const achievementTypes = await AchievementType.find();
+      const tree = await TreeInfo.findById(req.body.tree_id);
+      if (!tree) throw new Error("Tree not Found!");
+      const achievementTypes = await AchievementType.find({
+        tree_id: req.body.tree_id,
+      });
       res.json({
         success: true,
         achievementTypes,
@@ -1544,7 +1703,9 @@ app.post(
       const achievements = await Achievement.find({
         member_id: member._id,
       }).populate("type", "name");
-      const achievementTypes = await AchievementType.find();
+      const achievementTypes = await AchievementType.find({
+        tree_id: member.tree_id,
+      });
 
       const treeInfo = await TreeInfo.findOne({ _id: member.tree_id });
       if (!treeInfo) throw new Error("TreeInfo not found");
@@ -1579,6 +1740,7 @@ app.post(
       if (member) {
         const achievementType = await AchievementType.findOne({
           _id: req.body.achievementType_id,
+          tree_id: member.tree_id,
         });
         if (achievementType) {
           const new_achievement = new Achievement({
@@ -1634,12 +1796,15 @@ app.post(
   fetchEditMember,
   async (req, res) => {
     try {
+      const tree = await TreeInfo.findOne({ tree_id: req.body.tree_id });
+      if (!tree) throw new Error("Tree not Found!");
       const achievement = await Achievement.findOne({
         _id: req.body.achievement_id,
       });
       if (achievement) {
         const achievementType = await AchievementType.findOne({
           _id: req.body.achievementType_id,
+          tree_id: tree._id,
         });
         if (achievementType) {
           if (achievementType._id !== achievement.type) {
@@ -1662,8 +1827,8 @@ app.post("/api/death/get", fetchUser, fetchViewMember, async (req, res) => {
   try {
     const member = await Member.findById(req.body.member_id);
     if (!member) throw new Error("Member not found");
-    const graveSites = await GraveSite.find();
-    const deathCauses = await DeathCause.find();
+    const graveSites = await GraveSite.find({ tree_id: member.tree_id });
+    const deathCauses = await DeathCause.find({ tree_id: member.tree_id });
     const treeInfo = await TreeInfo.findOne({ _id: member.tree_id });
     if (!treeInfo) throw new Error("TreeInfo not found");
     const roleId = treeInfo.role?.[req.user.email];
@@ -1708,11 +1873,13 @@ app.post("/api/death/add", fetchUser, fetchEditMember, async (req, res) => {
     if (member) {
       const graveSite = await GraveSite.findOne({
         _id: req.body.gravesite_id,
+        tree_id: member.tree_id,
       });
 
       if (!graveSite) throw new Error("GraveSite not Found");
       const deathCause = await DeathCause.findOne({
         _id: req.body.deathcause_id,
+        tree_id: member.tree_id,
       });
 
       if (!deathCause) throw new Error("DeathCause not Found");
@@ -1783,10 +1950,12 @@ app.post("/api/death/update", fetchUser, fetchEditMember, async (req, res) => {
       if (death) {
         const graveSite = await GraveSite.findOne({
           _id: req.body.gravesite_id,
+          tree_id: member.tree_id,
         });
 
         const deathCause = await DeathCause.findOne({
           _id: req.body.deathcause_id,
+          tree_id: member.tree_id,
         });
 
         const date_of_birth = new Date(member.date_of_birth);
@@ -1943,7 +2112,7 @@ app.post(
         achievementCounts.map((item) => [item._id, item.count])
       );
 
-      const achievementTypeList = await AchievementType.find();
+      const achievementTypeList = await AchievementType.find({ tree_id });
 
       const result = [];
       for (const achievementType of achievementTypeList) {
@@ -1964,6 +2133,141 @@ app.post(
       });
     }
   }
+);
+
+function createAttributeApiRoutes(
+  app,
+  model,
+  fieldName,
+  routePrefix,
+  defaultValue
+) {
+  app.post(
+    `${routePrefix}/add`,
+    fetchUser,
+    fetchEditTreeId,
+    async (req, res) => {
+      try {
+        const check = await model.findOne({
+          name: req.body.name,
+          tree_id: req.body.tree_id,
+        });
+        if (check) throw new Error("Already existed!");
+        const item = new model({
+          name: req.body.name,
+          tree_id: req.body.tree_id,
+        });
+        await item.save();
+        res.status(200).json({ success: true });
+      } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+      }
+    }
+  );
+
+  app.post(
+    `${routePrefix}/get`,
+    fetchUser,
+    fetchViewTreeId,
+    async (req, res) => {
+      try {
+        const items = await model.find({ tree_id: req.body.tree_id });
+        res.status(200).json({ success: true, items });
+      } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+      }
+    }
+  );
+
+  app.post(
+    `${routePrefix}/update`,
+    fetchUser,
+    fetchEditTreeId,
+    async (req, res) => {
+      try {
+        const item = await model.findById(req.body.attribute_id);
+        if (!item) throw new Error("Not found!");
+        const check = await model.findOne({
+          name: req.body.new_name,
+          tree_id: req.body.tree_id,
+        });
+        if (check) throw new Error("Already existed!");
+        item.name = req.body.new_name;
+        await item.save();
+        res.status(200).json({ success: true });
+      } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+      }
+    }
+  );
+
+  app.post(
+    `${routePrefix}/delete`,
+    fetchUser,
+    fetchEditTreeId,
+    async (req, res) => {
+      try {
+        const item = await model.findById(req.body.attribute_id);
+        if (!item) throw new Error("Not found!");
+        if (item.name === defaultValue)
+          throw new Error("Cannot delete default value!");
+
+        const unknown = await model.findOne({ name: defaultValue });
+        if (!unknown) throw new Error("Default value not found!");
+
+        if (fieldName == "gravesite_id" || fieldName == "deathcause_id") {
+          await Death.updateMany(
+            { [fieldName]: item._id },
+            { $set: { [fieldName]: unknown._id } }
+          );
+        } else if (fieldName == "job" || fieldName == "place_of_birth") {
+          await Member.updateMany(
+            { [fieldName]: item._id },
+            { $set: { [fieldName]: unknown._id } }
+          );
+        } else if (fieldName == "type") {
+          await Achievement.updateMany(
+            { [fieldName]: item._id },
+            { $set: { [fieldName]: unknown._id } }
+          );
+        } else throw new Error("Invalid Field Name");
+        await model.deleteOne({ _id: item._id });
+        res.status(200).json({ success: true });
+      } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+      }
+    }
+  );
+}
+
+createAttributeApiRoutes(app, Job, "job", "/api/jobs", DEFAULT_JOB_NAME);
+createAttributeApiRoutes(
+  app,
+  Hometown,
+  "place_of_birth",
+  "/api/hometowns",
+  DEFAULT_HOMETOWN_NAME
+);
+createAttributeApiRoutes(
+  app,
+  GraveSite,
+  "gravesite_id",
+  "/api/gravesites",
+  DEFAULT_GRAVESITE_NAME
+);
+createAttributeApiRoutes(
+  app,
+  DeathCause,
+  "deathcause_id",
+  "/api/deathcauses",
+  DEFAULT_DEATHCAUSE_NAME
+);
+createAttributeApiRoutes(
+  app,
+  AchievementType,
+  "type",
+  "/api/achievementtypes",
+  DEFAULT_ACHIEVEMENTTYPE_NAME
 );
 
 // Listening to the server
