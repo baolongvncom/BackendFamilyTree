@@ -648,8 +648,8 @@ app.get("/api/isuser", fetchUser, async (req, res) => {
     });
   res.json({
     success: true,
-    email: user.email,
-    username: user.username,
+    email: user?.email,
+    username: user?.username,
   });
 });
 
